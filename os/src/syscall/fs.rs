@@ -1,5 +1,7 @@
 //! File and filesystem-related syscalls
 
+use core::ptr::null;
+
 use crate::fs::dev::open_device_file;
 use crate::fs::mount::MNT_TABLE;
 use crate::fs::pipe::{make_pipe, Pipe};
@@ -3225,4 +3227,71 @@ pub async fn sys_copy_file_range(
     //     );
     // }
     Ok(total_copied)
+}
+pub async fn sys_fchmodat(dirfd: i32, path_ptr: *const u8, mode: u32, flags: u32) -> SyscallRet {
+    const AT_SYMLINK_NOFOLLOW: u32 = 0x100;
+    trace!(
+        "[sys_fchmodat] dirfd: {}, path_ptr: {:p}, mode: {:#o}, flags: {:#x}",
+        dirfd,
+        path_ptr,
+        mode,
+        flags
+    );
+    let proc = current_process();
+    let token = proc.get_user_token().await;
+    let path = translated_str(token, path_ptr);
+    if path.is_empty() {
+        return Err(SysErrNo::ENOENT);
+    }
+    let follow_symlink = (flags & AT_SYMLINK_NOFOLLOW) == 0;
+    let abs_path = proc
+        .resolve_path_from_fd(dirfd, &path, follow_symlink)
+        .await?;
+    let open_flags = if follow_symlink {
+        OpenFlags::O_RDONLY
+    } else {
+        OpenFlags::O_RDONLY | OpenFlags::O_ASK_SYMLINK
+    };
+
+    let file = open_file(&abs_path, open_flags, 0)?;
+    let os_file = file.file()?;
+    let mut inner = os_file.inner.lock();
+    let current_mode = inner.inode.fmode()?;
+    let new_mode = (current_mode & 0o170000) | (mode & 0o7777);
+    inner.inode.fmode_set(new_mode)?;
+
+    Ok(0)
+}
+pub async fn sys_fchownat(dirfd: i32, path_ptr: *const u8, owner: u32, group: u32, flags: u32) -> SyscallRet {
+    const AT_SYMLINK_NOFOLLOW: u32 = 0x100;
+    const AT_EMPTY_PATH: u32 = 0x1000;
+    trace!(
+        "[sys_fchownat] dirfd: {}, path: {:p}, owner: {}, group: {}, flags: {:#x}",
+        dirfd, path_ptr, owner, group, flags
+    );
+    let proc = current_process();
+    let token = proc.get_user_token().await;
+    let path = translated_str(token, path_ptr);
+    if (flags & AT_EMPTY_PATH) != 0 && path.is_empty() {
+        let file = proc.get_file(dirfd as usize).await?;
+        let os_file = file.file()?;
+        return os_file.inner.lock().inode.set_owner(owner, group);
+    }
+
+    if path.is_empty() {
+        return Err(SysErrNo::ENOENT);
+    }
+    let follow_symlink = (flags & AT_SYMLINK_NOFOLLOW) == 0;
+    let abs_path = proc
+        .resolve_path_from_fd(dirfd, &path, follow_symlink)
+        .await?;
+    let open_flags = if follow_symlink {
+        OpenFlags::O_RDONLY
+    } else {
+        OpenFlags::O_RDONLY | OpenFlags::O_ASK_SYMLINK
+    };
+
+    let file = open_file(&abs_path, open_flags, 0)?;
+    let os_file = file.file()?;
+    return os_file.inner.lock().inode.set_owner(owner, group);
 }

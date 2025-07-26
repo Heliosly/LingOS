@@ -203,6 +203,25 @@ pub async fn syscall(syscall_id: usize, args: [usize; 6]) -> SyscallRet {
             )
             .await
         }
+        SYSCALL_FCHMODAT => {
+            sys_fchmodat(
+                args[0] as i32,
+                args[1] as *const u8,
+                args[2] as u32,
+                args[3] as u32,
+            )
+            .await
+        }
+        SYSCALL_FCHOWNAT => {
+            sys_fchownat(
+                args[0] as i32,
+                args[1] as *const u8,
+                args[2] as u32,
+                args[3] as u32,
+                args[4] as u32,
+            )
+            .await
+        }
         SYSCALL_GETROBUSTLIST => {
             sys_get_robust_list(args[0], args[1] as *mut usize, args[2] as *mut usize).await
         }
@@ -440,17 +459,6 @@ pub async fn syscall(syscall_id: usize, args: [usize; 6]) -> SyscallRet {
                 args[2] as u32,
                 args[3] as u32,
                 args[4] as *mut crate::fs::stat::Statx,
-            )
-            .await
-        }
-        SYSCALL_COPY_FILE_RANGE => {
-            sys_copy_file_range(
-                args[0] as i32,
-                args[1] as *mut i64,
-                args[2] as i32,
-                args[3] as *mut i64,
-                args[4],
-                args[5] as u32,
             )
             .await
         }
