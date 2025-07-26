@@ -1078,7 +1078,10 @@ impl ProcessControlBlock {
                     }
                     base_path_string = dir_vfs_node.get_path();
                 }
-                None => return Err(SysErrNo::EBADF),
+                None => {
+                    warn!("resolve_path_from_fd: Invalid dirfd {}", dirfd);
+                    return Err(SysErrNo::EBADF);
+                }
             }
         }
 
@@ -1105,6 +1108,10 @@ impl ProcessControlBlock {
                     return Ok(found_vfs_node.any().get_path()); // 返回 Result<String, SysErrNo>
                 }
                 Err(SysErrNo::ENOENT) => {
+                    warn!(
+                        "resolve_path_from_fd: Path '{}' not found",
+                        normalized_path_to_find
+                    );
                     return Err(SysErrNo::ENOENT);
                 }
                 Err(e) => return Err(e),

@@ -383,6 +383,7 @@ impl VfsNodeOps for FileWrapper {
 
     /// Read directory entries into `dirents`, starting from `start_idx`.
     fn read_dentry(&self, off: usize, len: usize) -> Result<(Vec<u8>, isize), SysErrNo> {
+        self.sync();
         let file = &mut self.file.borrow();
         let entries = file
             .read_dir_from(off as u64)

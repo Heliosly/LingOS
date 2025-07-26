@@ -1071,33 +1071,31 @@ if area.vpn_range.contains(vpn) {
     trace!("[mmap_page_fault] lazy allocate page for vpn");
         // 映射一个页（lazy allocate）
         area.map_one(page_table, vpn).expect("no memery ");
-
-        if let Some(mmap_file) = &area.fd {
+        // let ppnt =page_table
+        //     .translate(vpn)
+        //     .expect("mapped just now").ppn();
+        // println!("[mmap_page_fault] lazy allocate page for vpn:{:#x} ppn:{:#x}",vpn.0,ppnt.0);
+        if let Some( mmap_file) = &mut area.fd {
             let file = mmap_file.file.file().expect("file mmap should be normal file");
-            // 保存旧的文件偏移，以便读完后恢复
-            let old_offset = file.lseek(0, SEEK_CUR).unwrap();
 
             let start_addr: VirtAddr = start_vpn.into();
-            let user_buff = UserBuffer {
+            let mut user_buff = UserBuffer {
                 buffers: translated_byte_buffer(
                     page_table.token(),
                     va.0 as *const u8,
                     PAGE_SIZE,
                 ),
             };
-            // 定位到文件中对应页的偏移
-            file.lseek(
-                (va.0 - start_addr.0 + mmap_file.offset) as isize,
-                SEEK_SET,
-            )
-            .expect("mmap_page_fault should not fail");
-
-            // 实际从文件中读取到用户页
-            file.read(user_buff).await.unwrap();
-
-            // 恢复旧偏移
-            file.lseek(old_offset as isize, SEEK_SET)
-                .expect("mmap_page_fault should not fail");
+            let mut offset = va.0 - start_addr.0 + mmap_file.offset();
+            for slice in user_buff.buffers.iter_mut() {
+                let n = file.read_at(offset as usize, slice).expect("mmap_page_fault read file fail");
+                if n == 0 {
+                    break;
+                }
+                offset += n;
+            }
+           
+            
         }
 
         // 最后刷新 TLB

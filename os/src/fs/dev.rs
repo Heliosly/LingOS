@@ -31,8 +31,10 @@
 /// `DevRandom`用随机字节填充用户缓冲区。`DevRtc`提供当前时间。
 /// `DevTty`提供终端界面。`DevCpuDmaLatency`允许用户获取/设置CPU的最大反应时间。
 use crate::{
-    mm::{MapPermission, MmapFlags, UserBuffer, VirtAddr}, syscall::flags::MmapProt, task::current_process, utils::error::{SysErrNo, SyscallRet, TemplateRet}
-   
+    mm::{MapPermission, MmapFlags, UserBuffer, VirtAddr},
+    syscall::flags::MmapProt,
+    task::current_process,
+    utils::error::{SysErrNo, SyscallRet, TemplateRet},
 };
 use alloc::{
     collections::BTreeMap,
@@ -42,12 +44,12 @@ use alloc::{
     sync::Arc,
 };
 use async_trait::async_trait;
-use linux_raw_sys::general::xattr_args;
 use core::{cmp::min, task::Waker};
+use linux_raw_sys::general::xattr_args;
 use spin::{Lazy, Mutex, RwLock};
 
-use alloc::boxed::Box;
 use super::{stat::StMode, File, Kstat, PollEvents, Stdin, Stdout};
+use alloc::boxed::Box;
 
 pub struct DevZero;
 pub struct DevNull;
@@ -80,7 +82,7 @@ pub fn unregister_device(abs_path: &str) {
 }
 
 pub fn find_device(abs_path: &str) -> bool {
-   let a= DEVICES.lock().get(abs_path).is_some();
+    let a = DEVICES.lock().get(abs_path).is_some();
     // info!("find device {},{}", abs_path,a);
     a
 }
@@ -97,8 +99,10 @@ pub fn open_device_file(abs_path: &str) -> Result<Arc<dyn File>, SysErrNo> {
         "/dev/random" => Ok(Arc::new(DevRandom::new())),
         "/dev/tty" => Ok(Arc::new(DevTty::new())),
         "/dev/cpu_dma_latency" => Ok(Arc::new(DevCpuDmaLatency::new())),
+        path if path.starts_with("/dev/shm") => {
+            Err(SysErrNo::ENODEV) // 或 ENOSYS，取决于你想返回什么
+        }
 
-       
         _ => Err(SysErrNo::ENOENT),
     }
 }
@@ -108,13 +112,11 @@ impl DevZero {
     pub fn new() -> Self {
         Self
     }
-
-   
 }
 
 #[async_trait]
 impl File for DevZero {
-  fn get_path(&self) -> String {
+    fn get_path(&self) -> String {
         "/dev/zero".to_string()
     }
     fn as_any(&self) -> &dyn core::any::Any {
@@ -128,18 +130,12 @@ impl File for DevZero {
         Ok(true)
     }
 
-    async fn read<'a>(
-        &self,
-        mut user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn read<'a>(&self, mut user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // Fill buffer with zeros
         Ok(user_buf.fill0())
     }
 
-    async fn write<'a>(
-        &self,
-        user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn write<'a>(&self, user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // /dev/zero discards written data
         Ok(user_buf.len())
     }
@@ -176,11 +172,9 @@ impl DevNull {
     pub fn new() -> Self {
         Self
     }
-
 }
 #[async_trait]
 impl File for DevNull {
-
     fn get_path(&self) -> String {
         "/dev/null".to_string()
     }
@@ -195,18 +189,12 @@ impl File for DevNull {
         Ok(true)
     }
 
-    async fn read<'a>(
-        &self,
-        mut _user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn read<'a>(&self, mut _user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // /dev/null returns EOF immediately
         Ok(0)
     }
 
-    async fn write<'a>(
-        &self,
-        user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn write<'a>(&self, user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // /dev/null discards written data
         Ok(user_buf.len())
     }
@@ -234,11 +222,10 @@ impl File for DevNull {
         revents
     }
 
-    fn lseek(&self, _offset: isize, _whence:u32) -> SyscallRet {
+    fn lseek(&self, _offset: isize, _whence: u32) -> SyscallRet {
         Err(SysErrNo::ESPIPE)
     }
 }
-
 
 pub struct RtcTime {
     pub year: u32,
@@ -263,7 +250,6 @@ impl RtcTime {
 }
 
 impl Debug for RtcTime {
-    
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
@@ -275,18 +261,14 @@ impl Debug for RtcTime {
 
 /// 时钟设备
 impl DevRtc {
- 
     pub fn new() -> Self {
         Self
     }
-
-   
 }
-
 
 #[async_trait]
 impl File for DevRtc {
- fn get_path(&self) -> String {
+    fn get_path(&self) -> String {
         "/dev/rtc".to_string()
     }
     fn as_any(&self) -> &dyn core::any::Any {
@@ -300,10 +282,7 @@ impl File for DevRtc {
         Ok(true)
     }
 
-    async fn read<'a>(
-        &self,
-        mut user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn read<'a>(&self, mut user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // Return formatted RTC time string
         let time = RtcTime::new(2000, 1, 1, 0, 0, 0);
         let s = format!("{:?}", time);
@@ -313,10 +292,7 @@ impl File for DevRtc {
         Ok(len)
     }
 
-    async fn write<'a>(
-        &self,
-        user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn write<'a>(&self, user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // /dev/rtc discards written data
         Ok(user_buf.len())
     }
@@ -353,13 +329,11 @@ impl DevRandom {
     pub fn new() -> Self {
         Self
     }
-
- 
 }
 
 #[async_trait]
 impl File for DevRandom {
-   fn get_path(&self) -> String {
+    fn get_path(&self) -> String {
         "/dev/random".to_string()
     }
     fn as_any(&self) -> &dyn core::any::Any {
@@ -373,18 +347,12 @@ impl File for DevRandom {
         Ok(true)
     }
 
-    async fn read<'a>(
-        &self,
-        mut user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn read<'a>(&self, mut user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // Fill buffer with random data
         Ok(user_buf.fillrandom())
     }
 
-    async fn write<'a>(
-        &self,
-        user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn write<'a>(&self, user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // /dev/random discards written data
         Ok(user_buf.len())
     }
@@ -417,7 +385,7 @@ impl File for DevRandom {
         revents
     }
 
-    fn lseek(&self, _offset: isize, _whence:u32) -> SyscallRet {
+    fn lseek(&self, _offset: isize, _whence: u32) -> SyscallRet {
         Err(SysErrNo::ESPIPE)
     }
 }
@@ -427,15 +395,11 @@ impl DevTty {
     pub fn new() -> Self {
         Self
     }
-
-    
 }
-
-
 
 #[async_trait]
 impl File for DevTty {
-fn get_path(&self) -> String {
+    fn get_path(&self) -> String {
         "/dev/tty".to_string()
     }
     fn as_any(&self) -> &dyn core::any::Any {
@@ -449,18 +413,12 @@ fn get_path(&self) -> String {
         Ok(true)
     }
 
-    async fn read<'a>(
-        &self,
-        user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn read<'a>(&self, user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // Forward read to console stdin
         Stdin.read(user_buf).await
     }
 
-    async fn write<'a>(
-        &self,
-        user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn write<'a>(&self, user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // Forward write to console stdout
         Stdout.write(user_buf).await
     }
@@ -502,13 +460,11 @@ impl DevCpuDmaLatency {
             reaction_time: RwLock::new(10),
         }
     }
-
-   
 }
 
 #[async_trait]
 impl File for DevCpuDmaLatency {
- fn get_path(&self) -> String {
+    fn get_path(&self) -> String {
         "/dev/cpu_dma_latency".to_string()
     }
     fn as_any(&self) -> &dyn core::any::Any {
@@ -524,10 +480,7 @@ impl File for DevCpuDmaLatency {
         Ok(true)
     }
 
-    async fn read<'a>(
-        &self,
-        mut user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn read<'a>(&self, mut user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // Read 4-byte reaction_time in big-endian order
         let reaction_time = *self.reaction_time.read();
         let buf = [
@@ -541,10 +494,7 @@ impl File for DevCpuDmaLatency {
         Ok(user_buf.write(&buf[..len]))
     }
 
-    async fn write<'a>(
-        &self,
-        user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn write<'a>(&self, user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         let mut bytes: [u8; 4] = [0; 4];
         let mut count = 0;
         for sub_buff in user_buf.buffers.iter() {
@@ -592,10 +542,7 @@ impl File for DevCpuDmaLatency {
         // Seeking is not supported on this device
         Err(SysErrNo::ESPIPE)
     }
-    
 }
-
-
 
 pub struct DevShm;
 
@@ -603,12 +550,10 @@ impl DevShm {
     pub fn new() -> Self {
         Self
     }
-  
 }
 
 #[async_trait]
 impl File for DevShm {
-    
     fn readable<'a>(&'a self) -> TemplateRet<bool> {
         // /dev/shm 本身不可读
         Ok(false)
@@ -619,18 +564,12 @@ impl File for DevShm {
         Ok(false)
     }
 
-    async fn read<'a>(
-        &self,
-        _user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn read<'a>(&self, _user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // 对设备本身的读操作没有意义
         Err(SysErrNo::EINVAL)
     }
 
-    async fn write<'a>(
-        &self,
-        _user_buf: UserBuffer<'a>
-    ) -> Result<usize, SysErrNo> {
+    async fn write<'a>(&self, _user_buf: UserBuffer<'a>) -> Result<usize, SysErrNo> {
         // 对设备本身的写操作没有意义
         Err(SysErrNo::EINVAL)
     }
@@ -652,7 +591,7 @@ impl File for DevShm {
             ..Kstat::default()
         }
     }
-    
+
     // poll 方法可以像您的例子一样实现，表示总是可读写（虽然实际操作会失败）
     // 或者更准确地，返回错误。
     fn poll(&self, _events: PollEvents, _waker: &Waker) -> PollEvents {
@@ -660,9 +599,9 @@ impl File for DevShm {
         PollEvents::POLLERR
     }
     fn as_any(&self) -> &dyn core::any::Any {
-        self 
+        self
     }
-    fn get_path(&self)->String{
-        return "/dev/shm/cyclictest9".to_string()
+    fn get_path(&self) -> String {
+        return "/dev/shm/cyclictest9".to_string();
     }
 }

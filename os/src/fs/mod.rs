@@ -20,6 +20,7 @@ use async_trait::async_trait;
 use core::{
     any::Any,
     future::Future,
+    ops::Deref,
     panic,
     task::{Context, Poll, Waker},
 };
@@ -244,6 +245,10 @@ pub fn create_file(
     mode: u32,
     vfs: Arc<dyn VfsNodeOps>,
 ) -> Result<FileDescriptor, SysErrNo> {
+    info!(
+        "[create_file] abs_path={}, flags: {:?}, mode: {}",
+        abs_path, flags, mode
+    );
     // 一定能找到,因为除了RootInode外都有父结点
     let parent_dir = vfs;
     let (readable, writable) = flags.read_write();
@@ -319,6 +324,10 @@ pub fn open_file(
             flags,
             file: FileClass::Abs(device),
         });
+    } else {
+        // if abs_path.starts_with("/dev/shm") {
+        //     return Err(SysErrNo::ENODEV);
+        // }
     }
     // 是否为虚拟文件 proc
     if let Some(proc_file) = open_proc_file(abs_path) {
@@ -345,6 +354,8 @@ pub fn open_file(
     // 同一个路径对应一个Inode
     if has_inode(abs_path) {
         inode = find_inode_idx(abs_path);
+        // println!("abspath:{},", abs_path);
+        // print_inner();
     } else {
         let found_res = root_inode().find(&path, flags, 0);
         if found_res.clone().err() == Some(SysErrNo::ENOTDIR) {
@@ -471,6 +482,7 @@ static DYNAMIC_PATH: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         "/glibc/lib/tls_init_dso.so",
         "/usr/lib/ld-musl-riscv64-sf.so.1",
         "/usr/lib/ld-musl-loongarch-sf.so.1",
+        "/usr/lib/ld-musl-riscv64.so.1",
         "/glibc/lib/ld-linux-loongarch-lp64.so.1",
         "/glibc/lib/ld-linux-loongarch-lp64d.so.1",
         "/glibc/lib/ld-musl-loongarch-lp64d.so.1",

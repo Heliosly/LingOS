@@ -1,7 +1,5 @@
 use crate::timer::TimeVal;
 
-
-
 // For Mmap
 bitflags! {
     /// Mmap permissions
@@ -34,7 +32,7 @@ bitflags::bitflags! {
     }
 }
 
-pub const  AT_FDCWD :i32=  -100;
+pub const AT_FDCWD: i32 = -100;
 
 bitflags! {
     /// Flags for the mremap system call.
@@ -122,32 +120,29 @@ bitflags! {
     }
 }
 
-
-
 #[repr(C)]
-#[derive(Debug,  Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Rusage {
     pub ru_utime: TimeVal, // user CPU time used
     pub ru_stime: TimeVal, // system CPU time used
-    // pub ru_maxrss: i64,    // maximum resident set size
-    // pub ru_ixrss: i64,     // integral shared memory size
-    // pub ru_idrss: i64,     // integral unshared data size
-    // pub ru_isrss: i64,     // integral unshared stack size
-    // pub ru_minflt: i64,    // page reclaims (soft page faults)
-    // pub ru_majflt: i64,    // page faults (hard page faults)
-    // pub ru_nswap: i64,     // swaps
-    // pub ru_inblock: i64,   // block input operations
-    // pub ru_oublock: i64,   // block output operations
-    // pub ru_msgsnd: i64,    // IPC messages sent
-    // pub ru_msgrcv: i64,    // IPC messages received
-    // pub ru_nsignals: i64,  // signals received
-    // pub ru_nvcsw: i64,     // voluntary context switches
-    // pub ru_nivcsw: i64,    // involuntary context switches
+                           // pub ru_maxrss: i64,    // maximum resident set size
+                           // pub ru_ixrss: i64,     // integral shared memory size
+                           // pub ru_idrss: i64,     // integral unshared data size
+                           // pub ru_isrss: i64,     // integral unshared stack size
+                           // pub ru_minflt: i64,    // page reclaims (soft page faults)
+                           // pub ru_majflt: i64,    // page faults (hard page faults)
+                           // pub ru_nswap: i64,     // swaps
+                           // pub ru_inblock: i64,   // block input operations
+                           // pub ru_oublock: i64,   // block output operations
+                           // pub ru_msgsnd: i64,    // IPC messages sent
+                           // pub ru_msgrcv: i64,    // IPC messages received
+                           // pub ru_nsignals: i64,  // signals received
+                           // pub ru_nvcsw: i64,     // voluntary context switches
+                           // pub ru_nivcsw: i64,    // involuntary context switches
 }
 
-
 #[repr(C)]
-#[derive(Debug,Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Sysinfo {
     /// Seconds since boot
     pub uptime: usize,
@@ -184,7 +179,7 @@ impl Sysinfo {
             uptime: newuptime,
             loads: [0; 3],
             totalram: newtotalram,
-            freeram: newtotalram - (_ekernel as usize-_skernel as usize) ,
+            freeram: newtotalram - (_ekernel as usize - _skernel as usize),
             sharedram: 0,
             bufferram: 0,
             totalswap: 0,
@@ -220,7 +215,6 @@ pub const FUTEX_WAIT_REQUEUE_PI: i32 = 11;
 pub const FUTEX_CMP_REQUEUE_PI: i32 = 12;
 pub const FUTEX_LOCK_PI2: i32 = 13;
 
-
 pub const FUTEX_WAITERS: u32 = 2147483648;
 // Futex flags
 pub const FLAGS_SHARED: i32 = 0x10;
@@ -238,8 +232,19 @@ pub const FUTEX_OP_CMP_GT: u32 = 4; // if (oldval > cmparg)
 pub const FUTEX_OP_CMP_GE: u32 = 5; // if (oldval >= cmparg)
 
 // 操作类型 (存放在 val3 的 28-31 位)
-pub const FUTEX_OP_SET: u32 = 0;   // oparg
-pub const FUTEX_OP_ADD: u32 = 1;   // oldval + oparg
-pub const FUTEX_OP_OR: u32 = 2;    // oldval | oparg
-pub const FUTEX_OP_ANDN: u32 = 3;  // oldval & ~oparg
-pub const FUTEX_OP_XOR: u32 = 4;   // oldval ^ oparg
+pub const FUTEX_OP_SET: u32 = 0; // oparg
+pub const FUTEX_OP_ADD: u32 = 1; // oldval + oparg
+pub const FUTEX_OP_OR: u32 = 2; // oldval | oparg
+pub const FUTEX_OP_ANDN: u32 = 3; // oldval & ~oparg
+pub const FUTEX_OP_XOR: u32 = 4; // oldval ^ oparg
+bitflags! {
+    /// 定义 msync 系统调用的标志位
+    pub struct MsyncFlags: u32 {
+        /// 请求同步写操作，并等待其完成。
+        const MS_SYNC = 1;
+        /// 请求调度写操作，但立即返回，不等待其完成。
+        const MS_ASYNC = 2;
+        /// 使同一文件的其他映射失效。
+        const MS_INVALIDATE = 4;
+    }
+}

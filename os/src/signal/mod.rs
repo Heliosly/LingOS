@@ -39,14 +39,16 @@ pub const SI_SIGIO: i32 = -5; // Queued SIGIO
 pub const SI_TKILL: i32 = -6; // tkill or tgkill
 use crate::config::{SS_DISABLE, USER_SIGNAL_PROTECT};
 use crate::mm::{get_target_ref, put_data, translated_refmut};
-use crate::task::{current_process, current_task, current_task_id, current_token, exit_proc, yield_now};
+use crate::task::{
+    current_process, current_task, current_task_id, current_token, exit_proc, yield_now,
+};
 use crate::task::{ProcessRef, Task, TaskRef, PID2PC}; // 确保 Task 有 id()
 use crate::trap::{disable_irqs, TrapContext, TrapStatus, UContext};
 use crate::utils::error::SysErrNo;
 use alloc::sync::Arc;
 use alloc::task::Wake;
 pub use sigact::*;
-pub use signal::*; 
+pub use signal::*;
 
 // 通常信号编号从 1 开始。0 不是有效信号。
 pub const NSIG: usize = 64; // 支持的信号数量 (Linux x86_64 通常是64)
@@ -93,13 +95,12 @@ pub async fn send_signal(
         task_signal_state.sigpending.add(sig);
         drop(task_signal_state);
         drop(process_signal_state);
-        
+
         // 尝试唤醒目标线程 (如果它可被中断)
         // target_task_arc.try_interrupt_if_blocked();
         task_arc.set_sleep_reason(crate::task::sleeplist::WakeReason::SignalInterrupted);
         let task_ptr: *const Task = Arc::as_ptr(&task_arc);
-        unsafe { crate::task::waker::wakeup_task(task_ptr) }; 
-        
+        unsafe { crate::task::waker::wakeup_task(task_ptr) };
     } else {
         // --- 发送给整个进程 (kill 语义) ---
         let mut process_signal_state = pcb_arc.signal_shared_state.lock();
@@ -129,7 +130,7 @@ pub async fn send_signal(
             // 简化：尝试唤醒第一个（或主线程）
             // 这里的唤醒是指让调度器有机会运行它，以便它能检查信号
 
-           task_ref.set_sleep_reason(crate::task::sleeplist::WakeReason::SignalInterrupted);
+            task_ref.set_sleep_reason(crate::task::sleeplist::WakeReason::SignalInterrupted);
             let task_ptr: *const Task = Arc::as_ptr(task_ref);
             unsafe { crate::task::waker::wakeup_task(task_ptr) };
             break; // 仅唤醒一个
@@ -190,16 +191,15 @@ pub async fn send_signal_to_task(task_arc: &Arc<Task>, sig: Signal) -> Result<()
 
     task_arc.set_sleep_reason(crate::task::sleeplist::WakeReason::SignalInterrupted);
     let task_ptr: *const Task = Arc::as_ptr(task_arc);
-    info!("[send_signal_to_task] wake by tid:{}", current_task_id());
-
+    warn!("[send_signal_to_task] wake by tid:{}", current_task_id());
 
     crate::task::waker::wakeup_task(task_ptr);
     yield_now().await;
 
     Ok(())
 }
-pub async fn handle_pending_signals(res: Option<usize>)->bool {
-    let mut has_pending= false;
+pub async fn handle_pending_signals(res: Option<usize>) -> bool {
+    let mut has_pending = false;
     let task_arc = current_task();
 
     let pid = task_arc.get_pid();
@@ -253,7 +253,7 @@ pub async fn handle_pending_signals(res: Option<usize>)->bool {
                 task_arc.id(),
                 pid
             );
-            has_pending=true;
+            has_pending = true;
             let action = process_state.sigactions[sig as usize].clone(); // 动作是进程共享的
 
             // 从相应的挂起队列中移除
@@ -265,7 +265,7 @@ pub async fn handle_pending_signals(res: Option<usize>)->bool {
                 // 其他线程不应该再看到这个进程挂起信号（除非是广播信号或特殊情况）。
                 // 我们的模型是，一旦一个线程选中了一个进程信号来传递，就从共享队列移除。
             }
-            
+
             // 特殊处理 SIGKILL 和 SIGSTOP (它们不能被捕获或忽略，动作是固定的)
             if sig == Signal::SIGKILL {
                 exit_proc((128 + sig as usize) as i32).await;
@@ -351,17 +351,20 @@ pub async fn handle_pending_signals(res: Option<usize>)->bool {
                             tf.set_origin_a0(EINTR_USIZE);
 
                             task_state.is_restart = true;
-                            tf.sepc-=4;
+                            tf.sepc -= 4;
                             info!(
                                 "[handle_signals]syscall will be restarted a0:{:#x}",
                                 tf.regs.a0
                             );
                         } else {
-                            info!("[do_signal] syscall was interrupted res:{:#x},a0:{:#x}", res,tf.regs.a0);
+                            info!(
+                                "[do_signal] syscall was interrupted res:{:#x},a0:{:#x}",
+                                res, tf.regs.a0
+                            );
                             tf.set_arg0(EINTR_USIZE);
                         }
                     }
-                    
+
                     task_state.last_context = Some(*tf);
                     let trap_frame = task_arc.get_trap_cx().unwrap();
                     task_state.sig_info = false;
@@ -421,7 +424,7 @@ pub async fn handle_pending_signals(res: Option<usize>)->bool {
 
                         let ucontext =
                             UContext::new(task_arc.get_trap_cx().unwrap(), original_thread_mask);
-                        
+
                         debug!("[Signal Delivery] Putting UContext at sp: {:#x} ", sp);
                         debug!(
                             "[Signal Delivery] UContext contains pc: {:#x}",
@@ -502,10 +505,8 @@ pub async fn load_trap_for_signal() -> bool {
                 sig_state.sigmask = user_ctx.sigmask;
                 info!("[sys_sigreturn]info ");
             }
-             
-            // info!("[sys_sigreturn]pre sepc:{}, mContext: sepc:{} ",sig_state.now_trap_frame.sepc);
 
-       
+            // info!("[sys_sigreturn]pre sepc:{}, mContext: sepc:{} ",sig_state.now_trap_frame.sepc);
 
             info!(
                 "[sys_sigreturn]after restore now trap frame sepc:{:#x} mcontext sp:{:#?},a0:{} ",
@@ -531,7 +532,7 @@ pub async fn perform_default_action_for_process(
     // 默认动作现在可能需要作用于整个进程
     match sig.default_action() {
         SignalDefaultAction::Terminate | SignalDefaultAction::CoreDump => {
-            log::info!(
+            log::warn!(
                 "Process {} terminating due to signal {:?}",
                 pcb_arc.pid.0,
                 sig
@@ -543,7 +544,7 @@ pub async fn perform_default_action_for_process(
         SignalDefaultAction::Stop => {
             log::info!("Process {} stopping due to signal {:?}", pcb_arc.pid.0, sig);
             // pcb_arc.stop_all_tasks();
-            
+
             unimplemented!();
         }
         SignalDefaultAction::Continue => {

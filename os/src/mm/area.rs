@@ -760,7 +760,7 @@ pub enum MapAreaType {
 #[derive(Clone)]
 pub struct MmapFile {
     pub file: FileDescriptor,
-    pub offset: usize,
+    offset: usize,
 }
 
 impl MmapFile {
@@ -774,5 +774,8 @@ impl MmapFile {
 
     pub async fn writable(&self) -> TemplateRet<bool> {
         self.file.writable()
+    }
+    pub fn offset(&self) -> usize {
+        self.offset
     }
 }

@@ -27,8 +27,8 @@ use crate::{
         flush_all, frame_allocator::remaining_frames, get_target_ref,
         page_table::copy_to_user_bytes, put_data, translated_byte_buffer, translated_refmut,
         translated_str, FrameTracker, MapArea, MapAreaType, MapPermission, MapType, MmapFile,
-        MmapFlags, TranslateError, UserBuffer, VirtAddr, VirtPageNum, MPOL_BIND, MPOL_DEFAULT,
-        MPOL_PREFERRED,
+        MmapFlags, TranslateError, UserBuffer, VirtAddr, VirtPageNum, GLOBAL_MMAP_STORE, MPOL_BIND,
+        MPOL_DEFAULT, MPOL_PREFERRED,
     },
     signal::{handle_pending_signals, SigMaskHow, SigSet, Signal, NSIG},
     sync::futex::{FutexKey, FutexWaitInternalFuture, GLOBAL_FUTEX_SYSTEM},
@@ -589,7 +589,7 @@ pub async fn sys_wait4(pid: isize, wstatus: *mut i32, options: u32) -> SyscallRe
             {
                 let child_to_reap = children_guard.remove(idx);
                 let found_pid = child_to_reap.get_pid();
-                let exit_code = child_to_reap.exit_code();
+                let mut exit_code = child_to_reap.exit_code() as usize;
 
                 // 从全局PID映射中移除
                 PID2PC.lock().remove(&found_pid);
@@ -598,12 +598,25 @@ pub async fn sys_wait4(pid: isize, wstatus: *mut i32, options: u32) -> SyscallRe
                 drop(children_guard);
 
                 debug!("[sys_wait4] Reaped zombie child pid: {}", found_pid);
+                if exit_code > 128 {
+                    warn!(
+                        "[sys_wait4] Child process {} exited with signal {:#x}",
+                        found_pid, exit_code
+                    );
+                    exit_code = exit_code; // 转换为信号编号
+                } else {
+                    info!(
+                        "[sys_wait4] Child process {} exited with code {:#x}",
+                        found_pid, exit_code
+                    );
+                    exit_code = exit_code << 8; // 转换为退出状态
+                }
 
                 if !wstatus.is_null() {
                     proc.memory_set
                         .lock()
                         .await
-                        .safe_put_data(wstatus, exit_code << 8)
+                        .safe_put_data(wstatus, exit_code as i32)
                         .await?;
                 }
 
@@ -875,7 +888,6 @@ pub async fn sys_mmap(
     let mut ms = proc.memory_set.lock().await;
 
     let fd_table = proc.fd_table.lock().await;
-    let mmap_flag = MmapFlags::empty();
     // ——————————————————————————————————————————
     // 7. 如果是文件映射，要检查文件权限和 off_file
 

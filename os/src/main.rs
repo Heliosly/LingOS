@@ -126,9 +126,9 @@ pub fn main(hart_id: usize) -> ! {
 
     // task::add_initproc("/final", "/final/busybox", "sh ./copy-file-range-test.sh");
     //task::add_initproc("/final", "/final/busybox", "sh ./interrupts-test.sh");
-    // task::add_initproc("/musl", "/musl/busybox",  "sh /musl/ltp_testcode.sh");
-    task::add_initproc("/musl", "/musl/busybox", "sh");
-    //  task::add_initproc("/basic", "/basic/sigtest", "");
+    task::add_initproc("/musl", "/musl/busybox", "sh /musl/ltp_testcode.sh");
+    // task::add_initproc("/musl", "/musl/busybox", "sh /");
+    // task::add_initproc("/", "/mmap_test", "");
 
     //  task::add_initproc("/glibc", "/musl/busybox", "sh cyclictest_testcode.sh");
     // task::add_initproc("/musl", "/musl/busybox", "sh run-dynamic.sh");

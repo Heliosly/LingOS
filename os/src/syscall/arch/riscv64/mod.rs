@@ -16,7 +16,7 @@ pub const SYSCALL_FSTAT: usize = 80;
 pub const SYSCALL_EXIT: usize = 93;
 /// yield syscall
 pub const SYSCALL_YIELD: usize = 124;
-
+pub const SYSCALL_COPY_FILE_RANGE: usize = 285;
 pub const SYSCALL_SPLICE: usize = 76;
 pub const SYSCALL_KILL: usize = 129;
 /// kill syscall
@@ -171,3 +171,5 @@ pub const SYSCALL_SHMDT: usize = 197;
 pub const SYSCALL_GETITIMER: usize = 102;
 pub const SYSCALL_SETITIMER: usize = 103;
 pub const SYSCALL_UMASK: usize = 166;
+
+pub const SYSCALL_MSYNC: usize = 227;

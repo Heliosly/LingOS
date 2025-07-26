@@ -107,11 +107,6 @@ pub async fn sys_read(fd: usize, buf: *const u8, len: usize) -> SyscallRet {
     }
 }
 pub async fn sys_openat(dirfd: i32, path_ptr: *const u8, flags_u32: u32, mode: u32) -> SyscallRet {
-    info!(
-        "[sys_openat] dirfd = {}, path_ptr = {:p}, flags = {:#x}, mode = {:#o}",
-        dirfd, path_ptr, flags_u32, mode,
-    );
-
     // 1. 获取当前进程
 
     let proc = current_process();
@@ -154,7 +149,10 @@ pub async fn sys_openat(dirfd: i32, path_ptr: *const u8, flags_u32: u32, mode: u
 
     // 5. 拼接成最终的绝对路径
     let final_abs_path = normalize_and_join_path(&base_abs_path, &path)?;
-
+    info!(
+        "[sys_openat] dirfd = {}, path = {}, flags = {:#x}, mode = {:#o}",
+        dirfd, final_abs_path, flags_u32, mode,
+    );
     // 路径最终仍然为空且不是 . 或 ""，视为非法
     if final_abs_path.is_empty() && path != "." && path != "" {
         return Err(SysErrNo::ENOENT);
@@ -239,12 +237,9 @@ pub async fn sys_fstatat(
     let token = ms.token();
     let path = ms.safe_translated_str(path_ptr).await;
 
-    trace!(
+    info!(
         "[sys_fstatat] dirfd: {}, path: {:?}, kst: {:?}, flags: {}",
-        dirfd,
-        path,
-        kst,
-        flags
+        dirfd, path, kst, flags
     );
 
     // 解析 flags，非法时返回 EINVAL
@@ -1470,19 +1465,15 @@ pub async fn sys_faccessat(
     // 2. 从用户空间复制路径字符串
     // copy_from_user_str_until_null 需要 token, ptr, max_len
     let path_kernel_str = translated_str(token, path_user_ptr);
-    trace!(
-        "[sys_faccessat] dirfd: {}, path_ptr: {}, mode: {}, flags: {}",
-        dirfd,
-        path_kernel_str,
-        mode_u32,
-        _flags
-    );
 
     // 4. 解析得到最终的、已规范化的绝对路径 abs_path
     let abs_path = pcb_arc
         .resolve_path_from_fd(dirfd, &path_kernel_str, false)
         .await?;
-
+    info!(
+        "[sys_faccessat] dirfd: {}, path_ptr: {}, mode: {}, flags: {}",
+        dirfd, abs_path, mode_u32, _flags
+    );
     // 4. 检查挂载点只读 (如果请求写权限)
     if mode.contains(FaccessatMode::W_OK) {
         if let Some(mount_entry) = crate::fs::mount::MNT_TABLE
@@ -2135,7 +2126,7 @@ pub async fn sys_symlinkat(
     newdirfd: i32, // POSIX 是 int, Rust 通常用 i32
     linkpath_user_ptr: *const u8,
 ) -> SyscallRet {
-    log::trace!(
+    log::warn!(
         "[sys_symlinkat] target_ptr: {:p}, newdirfd: {}, linkpath_ptr: {:p}",
         target_user_ptr,
         newdirfd,
@@ -3262,12 +3253,22 @@ pub async fn sys_fchmodat(dirfd: i32, path_ptr: *const u8, mode: u32, flags: u32
 
     Ok(0)
 }
-pub async fn sys_fchownat(dirfd: i32, path_ptr: *const u8, owner: u32, group: u32, flags: u32) -> SyscallRet {
+pub async fn sys_fchownat(
+    dirfd: i32,
+    path_ptr: *const u8,
+    owner: u32,
+    group: u32,
+    flags: u32,
+) -> SyscallRet {
     const AT_SYMLINK_NOFOLLOW: u32 = 0x100;
     const AT_EMPTY_PATH: u32 = 0x1000;
     trace!(
         "[sys_fchownat] dirfd: {}, path: {:p}, owner: {}, group: {}, flags: {:#x}",
-        dirfd, path_ptr, owner, group, flags
+        dirfd,
+        path_ptr,
+        owner,
+        group,
+        flags
     );
     let proc = current_process();
     let token = proc.get_user_token().await;

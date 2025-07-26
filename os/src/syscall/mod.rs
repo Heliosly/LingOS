@@ -22,10 +22,13 @@ use crate::{
     fs::select::FdSet,
     mm::shm::ShmIdDs,
     signal::SigInfo,
-    syscall::net::{
-        sys_accept, sys_accept4, sys_bind, sys_connect, sys_getpeername, sys_getsockname,
-        sys_listen, sys_recvfrom, sys_sendmsg, sys_sendto, sys_setsockopt, sys_socket,
-        sys_socketpair,
+    syscall::{
+        flags::MsyncFlags,
+        net::{
+            sys_accept, sys_accept4, sys_bind, sys_connect, sys_getpeername, sys_getsockname,
+            sys_listen, sys_recvfrom, sys_sendmsg, sys_sendto, sys_setsockopt, sys_socket,
+            sys_socketpair,
+        },
     },
     timer::{Tms, UserTimeSpec},
 };
@@ -450,7 +453,26 @@ pub async fn syscall(syscall_id: usize, args: [usize; 6]) -> SyscallRet {
             )
             .await
         }
+        SYSCALL_COPY_FILE_RANGE => {
+            sys_copy_file_range(
+                args[0] as i32,
+                args[1] as *mut i64,
+                args[2] as i32,
+                args[3] as *mut i64,
+                args[4],
+                args[5] as u32,
+            )
+            .await
+        }
 
+        SYSCALL_MSYNC => {
+            sys_msync(
+                args[0],
+                args[1],
+                MsyncFlags::from_bits(args[2] as u32).unwrap(),
+            )
+            .await
+        }
         #[cfg(target_arch = "loongarch64")]
         SYSCALL_STATX => {
             sys_statx(
