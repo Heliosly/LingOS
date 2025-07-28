@@ -1440,7 +1440,7 @@ impl TaskControlBlock {
         self.noma_policy.load(Ordering::Acquire)
     }
     pub async fn get_name(&self) -> String {
-        self.name.lock().clone()
+        self.name.lock().await.clone()
     }
     pub async fn set_name(&self, name: String) {
         self.name.lock().await.replace_range(.., &name);
