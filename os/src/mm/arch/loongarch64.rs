@@ -1,19 +1,19 @@
-use core::fmt;
-use bit_field::BitField;
-use crate::mm::{MapPermission, PhysAddr, PhysPageNum};
 use crate::config::PAGE_SIZE_BITS;
+use crate::mm::{MapPermission, PhysAddr, PhysPageNum};
+use bit_field::BitField;
+use core::fmt;
 
 const PALEN: usize = 48;
-    /// The size of the page for this platform.
-    pub const PAGE_SIZE: usize = 0x1000;
-    pub const PAGE_LEVEL: usize = 3;
-    pub const PTE_NUM_IN_PAGE: usize = 0x200;
+/// The size of the page for this platform.
+pub const PAGE_SIZE: usize = 0x1000;
+pub const PAGE_LEVEL: usize = 3;
+pub const PTE_NUM_IN_PAGE: usize = 0x200;
 
-    macro_rules! bit {
-        ($x: expr) => {
-            (1 << $x)
-        };
-    }
+macro_rules! bit {
+    ($x: expr) => {
+        (1 << $x)
+    };
+}
 bitflags::bitflags! {
     pub struct PTEFlags: usize {
         /// Page Valid
@@ -77,8 +77,8 @@ impl fmt::Debug for PageTableEntry {
 impl PageTableEntry {
     #[inline]
     pub fn new_table(paddr: PhysAddr) -> Self {
-        assert!(paddr.0%PAGE_SIZE==0);
-        Self{bits: paddr.0 }
+        assert!(paddr.0 % PAGE_SIZE == 0);
+        Self { bits: paddr.0 }
     }
 
     pub fn new(ppn: PhysPageNum, flags: PTEFlags) -> Self {
@@ -93,9 +93,13 @@ impl PageTableEntry {
     }
     // 返回物理页号---页表项
     pub fn ppn(&self) -> PhysPageNum {
-        self.bits.get_bits(PAGE_SIZE_BITS..PALEN).into()
+        let res: PhysPageNum = self.bits.get_bits(PAGE_SIZE_BITS..PALEN).into();
+        if res.0 == 0 {
+            panic!("ppn is zero, bits:{:#x}", self.bits);
+        }
+        res
     }
-    pub fn address(&self)->PhysAddr{
+    pub fn address(&self) -> PhysAddr {
         PhysAddr::from((self.bits) & 0xffff_ffff_f000)
     }
     // 返回物理页号---页目录项
@@ -112,7 +116,7 @@ impl PageTableEntry {
     }
     // 有效位
     pub fn is_valid(&self) -> bool {
-        self.bits !=0
+        self.bits != 0
     }
     // 是否可写
     pub fn writable(&self) -> bool {
@@ -139,16 +143,16 @@ impl PageTableEntry {
     // COW 相关方法
     pub fn set_cow(&mut self) {
         let mut flags = self.flags();
-        
+
         // 如果当前可写，则备份写权限并清除写权限
         if flags.contains(PTEFlags::W) {
             flags.insert(PTEFlags::W_BACKUP);
             flags.remove(PTEFlags::W);
         }
-        
+
         // 设置 COW 标志
         flags.insert(PTEFlags::COW);
-        
+
         // 更新页表项
         self.set_flags(flags);
     }
@@ -169,9 +173,9 @@ impl PageTableEntry {
 
         self.set_flags(flags);
     }
-   
-    pub fn is_write_back(&self)->bool{
-        let flags= self.flags();
+
+    pub fn is_write_back(&self) -> bool {
+        let flags = self.flags();
         flags.contains(PTEFlags::W_BACKUP)
     }
     pub fn set_flags(&mut self, flags: PTEFlags) {
@@ -179,17 +183,18 @@ impl PageTableEntry {
         let ppn_bits = self.bits & ((1usize << PALEN) - (1usize << PAGE_SIZE_BITS));
         self.bits = ppn_bits | flags.bits();
     }
-    
+
     pub fn set_ppn(&mut self, paddr: crate::mm::PhysAddr) {
         let ppn = crate::mm::PhysPageNum::from(paddr.0 >> PAGE_SIZE_BITS);
         let flags_bits = self.flags().bits();
-        self.bits = flags_bits | ((ppn.raw()& ((1usize << (PALEN - PAGE_SIZE_BITS)) - 1)) << PAGE_SIZE_BITS);
+        self.bits = flags_bits
+            | ((ppn.raw() & ((1usize << (PALEN - PAGE_SIZE_BITS)) - 1)) << PAGE_SIZE_BITS);
     }
 }
 
 impl From<MapPermission> for PTEFlags {
     fn from(value: MapPermission) -> Self {
-        let mut flags = PTEFlags::V|PTEFlags::P;
+        let mut flags = PTEFlags::V | PTEFlags::P;
         if value.contains(MapPermission::W) {
             flags |= PTEFlags::W | PTEFlags::D;
         }
@@ -211,8 +216,6 @@ impl From<PTEFlags> for MapPermission {
         if val.contains(PTEFlags::W) {
             flags |= MapPermission::W;
         }
-
-    
 
         // if !self.contains(PTEFlags::NX) {
         //     flags |= MapPermission::X;

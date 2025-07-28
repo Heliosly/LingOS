@@ -257,22 +257,12 @@ pub async fn sys_execve(
     path = process
         .resolve_path_from_fd(AT_FDCWD, path.as_str(), true)
         .await?;
-    // if path.ends_with("ls") || path.ends_with("xargs") || path.ends_with("sleep") {
+    // if path.endnames_with("ls") || path.ends_with("xargs") || path.ends_with("sleep") {
     //     //ls,xargs,sleep文件为busybox调用，需要用busybox来启动
     //     argv_vec.insert(0, String::from("busybox"));
     //     path = String::from("/busybox");
     // }
 
-    if path == "/glibc/entry-dynamic.exe" || path == "/glibc/entry-static.exe" {
-        if argv_vec.get(1).is_some() {
-            if argv_vec[1] == "setvbuf_unget"
-                || (argv_vec[1] == "sem_init" && path == "/glibc/entry-dynamic.exe")
-            {
-                exit_proc(-2).await;
-                return Ok(0);
-            }
-        }
-    }
     // println!("[sys_execve] path is {},arg is {:?}", path, argv_vec);
     info!("[sys_execve] path is {},arg is {:?}", path, argv_vec);
     let mut env = Vec::<String>::new();
@@ -324,7 +314,12 @@ pub async fn sys_execve(
 
     process.set_exe(abs_path).await;
     process.exec(&elf_data, &argv_vec, &mut env).await?;
-
+    process
+        .main_task
+        .lock()
+        .await
+        .set_name(path.rsplitn(2, '/').next().unwrap_or(&path).to_string())
+        .await;
     // println!("in execve:");
     // process.memory_set.lock().await.areatree.debug_print();
     // if !va_is_valid(0x10017a, process.memory_set.lock().await.token()){
@@ -1661,7 +1656,7 @@ pub async fn sys_sched_yield() -> SyscallRet {
 pub fn sys_setuid(uid: u32) -> SyscallRet {
     let task = current_task();
     task.set_uid(uid as usize);
-    change_current_uid(uid);
+    // change_current_uid(uid);
     Ok(0)
 }
 
@@ -1980,8 +1975,7 @@ pub async fn sys_getrusage(who: i32, usage_ptr: *mut Rusage) -> SyscallRet {
 
     let token = pcb.memory_set.lock().await.token();
     pcb.manual_alloc_type_for_lazy(usage_ptr).await?;
-    let task = current_task();
-    let tms = unsafe { *task.tms.get() };
+    let tms = unsafe { *pcb.tms.get() };
     // 3. 根据 `who` 填充 Rusage 结构体
     let rusage_data = match rusage_target {
         RusageWho::Self_ | RusageWho::Thread => {
@@ -2194,4 +2188,36 @@ pub async fn sys_pselect6(
 
     // --- 返回最终结果 ---
     return result;
+}
+
+/// 开启或关闭进程会计
+pub async fn sys_acct(path: *const u8) -> SyscallRet {
+    let task = current_task();
+    // 检查超级用户权限
+    if task.uid() != 0 {
+        return Err(SysErrNo::EPERM);
+    }
+
+    let mut acct_file_guard = crate::task::ACCT_FILE.lock();
+
+    if path.is_null() {
+        // 如果路径为空，关闭会计功能
+        *acct_file_guard = None;
+        return Ok(0);
+    }
+
+    // 如果路径非空，打开文件并设置为会计文件
+    let token = current_token().await;
+    current_process().manual_alloc_type_for_lazy(path).await?;
+    let path_str = translated_str(token, path);
+    match open_file(path_str.as_str(), OpenFlags::O_RDWR, 0) {
+        Ok(file) => {
+            *acct_file_guard = Some(Arc::from(file));
+            Ok(0)
+        }
+        Err(err) => {
+            warn!("sys_acct: failed to open file {}: {:?}", path_str, err);
+            return Err(err);
+        }
+    }
 }

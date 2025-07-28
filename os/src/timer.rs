@@ -24,10 +24,10 @@ const NANO_PER_SEC: usize = 1_000_000_000;
 
 /// Get the current time in ticks
 pub fn get_time() -> usize {
-   get_time_ticks()/CLOCK_FREQ
+    get_time_ticks() / CLOCK_FREQ
 }
 pub fn get_time_ticks() -> usize {
- #[cfg(target_arch = "riscv64")]
+    #[cfg(target_arch = "riscv64")]
     {
         time::read()
     }
@@ -37,7 +37,7 @@ pub fn get_time_ticks() -> usize {
         unsafe {
             core::arch::asm!("rdtime.d {}, $zero", out(reg) time);
         }
-        time as usize 
+        time as usize
     }
 }
 
@@ -45,7 +45,7 @@ pub fn get_time_ticks() -> usize {
 pub fn get_time_ms() -> usize {
     #[cfg(target_arch = "riscv64")]
     {
-       get_time_ticks() * MSEC_PER_SEC / CLOCK_FREQ
+        get_time_ticks() * MSEC_PER_SEC / CLOCK_FREQ
     }
     #[cfg(target_arch = "loongarch64")]
     {
@@ -54,12 +54,11 @@ pub fn get_time_ms() -> usize {
     }
 }
 #[repr(C)]
-#[derive(Debug,PartialEq, Eq,PartialOrd, Ord,Clone, Copy,Default)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default)]
 pub struct TimeVal {
     pub sec: usize,
     pub usec: usize,
 }
-
 
 const NSEC_PER_USEC: u64 = 1_000;
 pub fn current_time() -> TimeVal {
@@ -70,10 +69,9 @@ pub fn current_time() -> TimeVal {
     }
 }
 
-
 impl TimeVal {
     ///仅加法可用
-   pub  fn add_milliseconds(&self, ms: usize) -> TimeVal {
+    pub fn add_milliseconds(&self, ms: usize) -> TimeVal {
         let sec = self.sec + ms / MSEC_PER_SEC;
         let usec = self.usec + (ms % MSEC_PER_SEC) * 1000;
         TimeVal::normalize(sec, usec)
@@ -91,19 +89,18 @@ impl TimeVal {
         TimeVal { sec, usec }
     }
 
-        pub fn add_timespec(&self, ts: &UserTimeSpec) -> Self {
-            let sec = self.sec + ts.tv_sec as usize;
-            let usec = self.usec + ts.tv_nsec as usize / 1000;
-           TimeVal::normalize(sec,usec)
-        }
-    pub fn from_ns(time:u64)->Self{
+    pub fn add_timespec(&self, ts: &UserTimeSpec) -> Self {
+        let sec = self.sec + ts.tv_sec as usize;
+        let usec = self.usec + ts.tv_nsec as usize / 1000;
+        TimeVal::normalize(sec, usec)
+    }
+    pub fn from_ns(time: u64) -> Self {
         TimeVal {
             sec: (time / NANO_PER_SEC as u64) as usize,
             usec: ((time % NANO_PER_SEC as u64) / 1000) as usize,
         }
     }
 }
-
 
 impl Add for TimeVal {
     type Output = TimeVal;
@@ -116,8 +113,9 @@ impl Add for TimeVal {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default,PartialEq, Eq, PartialOrd, Ord)]
-pub struct UserTimeSpec { // 对应 struct timespec
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UserTimeSpec {
+    // 对应 struct timespec
     pub tv_sec: usize,  // seconds
     pub tv_nsec: usize, // nanoseconds (long)
 }
@@ -138,17 +136,16 @@ impl From<TimeVal> for u64 {
         (tv.sec as u64 * NANO_PER_SEC as u64) + (tv.usec as u64 * NSEC_PER_USEC)
     }
 }
-impl UserTimeSpec{
+impl UserTimeSpec {
     pub fn as_nanos(&self) -> usize {
         self.tv_sec * NANO_PER_SEC + self.tv_nsec
     }
 }
-pub fn usertime2_timeval(usertime :&UserTimeSpec)->TimeVal{
-       
-TimeVal{
-    sec:usertime.tv_sec,
-    usec:usertime.tv_nsec/1000,
-}
+pub fn usertime2_timeval(usertime: &UserTimeSpec) -> TimeVal {
+    TimeVal {
+        sec: usertime.tv_sec,
+        usec: usertime.tv_nsec / 1000,
+    }
 }
 impl Sub for UserTimeSpec {
     type Output = Self;
@@ -240,22 +237,20 @@ pub fn get_time_ns() -> usize {
     nanos as usize
 }
 
-
 /// Set the next timer interrupt
 pub fn set_next_trigger() {
     set_timer(get_time_ticks() + CLOCK_FREQ / TICKS_PER_SEC);
 }
 
 pub fn get_usertime() -> UserTimeSpec {
-    let ticks= get_time_ticks();
-    let tv_sec= ticks / CLOCK_FREQ;
-    let tv_nsec= (ticks % CLOCK_FREQ) * NANO_PER_SEC / CLOCK_FREQ;
+    let ticks = get_time_ticks();
+    let tv_sec = ticks / CLOCK_FREQ;
+    let tv_nsec = (ticks % CLOCK_FREQ) * NANO_PER_SEC / CLOCK_FREQ;
     UserTimeSpec { tv_sec, tv_nsec }
-
 }
 
 #[repr(C)]
-#[derive(Default,Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 pub struct Tms {
     pub tms_utime: isize,  //用户模式下花费的CPU时间
     pub tms_stime: isize,  //内核模式下花费的CPU时间
@@ -273,17 +268,20 @@ impl Tms {
         }
     }
 }
-
-#[derive(Clone,Copy)]
+///ms级别
+#[derive(Clone, Copy)]
 pub struct TimeData {
-    pub utime: isize,//用户模式下花费的CPU时间
-    pub stime: isize, //内核模式下花费的CPU时间
+    pub utime: isize,  //用户模式下花费的CPU时间
+    pub stime: isize,  //内核模式下花费的CPU时间
     pub cutime: isize, //子进程在用户模式下花费的CPU时间
-    pub cstime: isize,//子进程在内核模式下花费的CPU时间
-    pub lasttime: isize,
+    pub cstime: isize, //子进程在内核模式下花费的CPU时间
+    pub slasttime: isize,
+
+    pub ulasttime: isize,
+    pub starttime: isize, // 进程开始时间
 }
 
-impl Default for TimeData{
+impl Default for TimeData {
     fn default() -> Self {
         let now = (get_time_ms()) as isize;
         Self {
@@ -291,12 +289,13 @@ impl Default for TimeData{
             stime: 0,
             cutime: 0,
             cstime: 0,
-            lasttime: now,
+            ulasttime: now,
+            starttime: now, // 初始化时设置开始时间为当前时间
+            slasttime: now,
         }
     }
 }
 impl TimeData {
-    
     pub fn new() -> Self {
         let now = (get_time_ms()) as isize;
         Self {
@@ -304,20 +303,28 @@ impl TimeData {
             stime: 0,
             cutime: 0,
             cstime: 0,
-            lasttime: now,
+            ulasttime: now,
+            starttime: now, // 初始化时设置开始时间为当前时间
+            slasttime: now,
         }
+    }
+    pub fn set_slasttime(&mut self, lasttime: isize) {
+        self.slasttime = lasttime;
+    }
+    pub fn set_ulasttime(&mut self, lasttime: isize) {
+        self.ulasttime = lasttime;
     }
     pub fn update_utime(&mut self) {
         let now = (get_time_ms()) as isize;
-        let duration = now - self.lasttime;
+        let duration = now - self.ulasttime;
         self.utime += duration;
-        self.lasttime = now;
+        self.ulasttime = now;
     }
     pub fn update_stime(&mut self) {
         let now = (get_time_ms()) as isize;
-        let duration = now - self.lasttime;
+        let duration = now - self.ulasttime;
         self.stime += duration;
-        self.lasttime = now;
+        self.ulasttime = now;
     }
     pub fn clear(&mut self) {
         let now = (get_time_ms()) as isize;
@@ -325,10 +332,10 @@ impl TimeData {
         self.stime = 0;
         self.cutime = 0;
         self.cstime = 0;
-        self.lasttime = now;
+        self.ulasttime = now;
+        self.slasttime = now;
     }
 }
-
 
 static REAL_TIMERS: LazyInit<Mutex<BTreeMap<u64, usize>>> = LazyInit::new();
 
@@ -337,11 +344,11 @@ pub fn init_timer_backend() {
 }
 
 /// 当 sys_setitimer 设置 ITIMER_REAL 时调用此函数
-pub async  fn set_real_timer(pid: usize, value_ns: u64) {
+pub async fn set_real_timer(pid: usize, value_ns: u64) {
     let mut timers = REAL_TIMERS.lock().await;
     // 首先移除该进程可能存在的旧定时器
     timers.retain(|_, p| *p != pid);
-    
+
     // 如果 value > 0，说明是启动定时器
     if value_ns > 0 {
         let deadline = get_time_ns() as u64 + value_ns; // get_time_ns() 获取当前时间
@@ -353,7 +360,7 @@ pub const ITIMER_VIRTUAL: i32 = 1;
 pub const ITIMER_PROF: i32 = 2;
 
 /// 在每个时钟中断处理函数的末尾调用
-pub async  fn check_real_timers() {
+pub async fn check_real_timers() {
     let mut timers = REAL_TIMERS.lock().await;
     let now = get_time_ns();
 
@@ -361,7 +368,7 @@ pub async  fn check_real_timers() {
         if deadline > now as u64 {
             break; // 最早的定时器还没到期，后面的肯定也没到
         }
-        
+
         // 定时器到期，从队列中移除
         timers.pop_first();
 
@@ -370,7 +377,9 @@ pub async  fn check_real_timers() {
             let mut real_timer = process.timers[ITIMER_REAL as usize].lock().await;
 
             // 发送信号
-            send_signal(pid, None, crate::signal::Signal::SIGALRM).await.unwrap();
+            send_signal(pid, None, crate::signal::Signal::SIGALRM)
+                .await
+                .unwrap();
 
             // 如果是周期性定时器，重新设置并加入队列
             if real_timer.interval > 0 {
@@ -386,38 +395,41 @@ pub async  fn check_real_timers() {
 }
 pub async fn handle_timer_tick() {
     const NSEC_PER_SEC: u64 = 1_000_000_000;
-const TICK_FREQUENCY: u64 = 100; // 假设是 100Hz
-const NSEC_PER_TICK: u64 = NSEC_PER_SEC / TICK_FREQUENCY;
+    const TICK_FREQUENCY: u64 = 100; // 假设是 100Hz
+    const NSEC_PER_TICK: u64 = NSEC_PER_SEC / TICK_FREQUENCY;
     // 1. 更新当前进程的 TimeData (您的内核应该已经有这部分逻辑了)
     let process = crate::task::current_process();
-
 
     // 2. ★★★ 新增：驱动 CPU 时间定时器 ★★★
 
     // --- 驱动 ITIMER_VIRTUAL (只消耗用户时间) ---
-        let mut vtimer = process.timers[ITIMER_VIRTUAL as usize].lock().await;
-        if vtimer.value > 0 { // 如果定时器已启动
-            if vtimer.value <= NSEC_PER_TICK {
-                // 时间到！
-                send_signal(process.get_pid(), None, crate::signal::Signal::SIGVTALRM).await.unwrap();
-                vtimer.value = vtimer.interval; // 重置为间隔值或清零
-            } else {
-                vtimer.value -= NSEC_PER_TICK; // 倒计时
-            }
+    let mut vtimer = process.timers[ITIMER_VIRTUAL as usize].lock().await;
+    if vtimer.value > 0 {
+        // 如果定时器已启动
+        if vtimer.value <= NSEC_PER_TICK {
+            // 时间到！
+            send_signal(process.get_pid(), None, crate::signal::Signal::SIGVTALRM)
+                .await
+                .unwrap();
+            vtimer.value = vtimer.interval; // 重置为间隔值或清零
+        } else {
+            vtimer.value -= NSEC_PER_TICK; // 倒计时
         }
-    ;
+    };
     // --- 驱动 ITIMER_PROF (消耗用户和内核时间) ---
     let mut ptimer = process.timers[ITIMER_PROF as usize].lock().await;
-    if ptimer.value > 0 { // 如果定时器已启动
+    if ptimer.value > 0 {
+        // 如果定时器已启动
         if ptimer.value <= NSEC_PER_TICK {
             // 时间到！
-            send_signal(process.get_pid(), None, crate::signal::Signal::SIGPROF).await.unwrap();
+            send_signal(process.get_pid(), None, crate::signal::Signal::SIGPROF)
+                .await
+                .unwrap();
             ptimer.value = ptimer.interval; // 重置
         } else {
             ptimer.value -= NSEC_PER_TICK; // 倒计时
         }
     }
 
-    
-    check_real_timers().await; 
+    check_real_timers().await;
 }

@@ -8,15 +8,15 @@ use super::current::CurrentTask;
 use super::task::TaskControlBlock;
 use super::{schedule, TaskStatus};
 use crate::config::PAGE_SIZE_BITS;
+use crate::fs::{File, FileDescriptor};
 use crate::mm::activate_by_token;
 use crate::sbi::shutdown;
 use crate::sync::futex::init_futex_system;
 use crate::task::kstack::{self, current_stack_bottom, current_stack_top};
 use crate::task::sleeplist::init_sleeper_queue;
-use crate::task::{current_process, put_prev_task };
+use crate::task::{current_process, put_prev_task};
 use crate::trap::{disable_irqs, enable_irqs, user_return, TrapContext, TrapStatus};
 use alloc::boxed::Box;
-use alloc::string::ToString;
 use alloc::sync::Arc;
 use core::future::Future;
 use core::panic;
@@ -30,7 +30,7 @@ use spin::mutex::Mutex as Spin;
 pub static KERNEL_SCHEDULER: LazyInit<Arc<Spin<CFScheduler<TaskControlBlock>>>> = LazyInit::new();
 pub static UTRAP_HANDLER: LazyInit<fn() -> Pin<Box<dyn Future<Output = i32> + 'static>>> =
     LazyInit::new();
-
+pub static ACCT_FILE: spin::Mutex<Option<Arc<FileDescriptor>>> = spin::Mutex::new(None);
 ///runtask with future;
 /// IMPO
 pub fn run_task2(mut curr: CurrentTask) {
@@ -91,7 +91,14 @@ pub fn run_task2(mut curr: CurrentTask) {
                             //                                 tf
                             //                             );
                             enable_irqs();
-                    trace!("[user_return]  result:{:#x} sepc:{:#x},tp:{:#x}", tf.regs.a0,tf.sepc,tf.regs.tp);
+                            trace!(
+                                "[user_return]  result:{:#x} sepc:{:#x},tp:{:#x}",
+                                tf.regs.a0,
+                                tf.sepc,
+                                tf.regs.tp
+                            );
+                            current_process().set_ulasttime(crate::timer::get_time_ms());
+                            current_process().update_stime();
                             user_return(tf);
                         }
                     }
@@ -142,7 +149,7 @@ pub fn init(utrap_handler: fn() -> Pin<Box<dyn Future<Output = i32> + 'static>>)
 
     println!("current kernel stack bottom:{:#x}", current_stack_bottom());
     // kstack::alloc_current_stack();
-    
+
     UTRAP_HANDLER.init_by(utrap_handler);
     let scheduler = CFScheduler::new();
     KERNEL_SCHEDULER.init_by(Arc::new(Spin::new(scheduler)));

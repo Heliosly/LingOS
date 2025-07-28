@@ -66,7 +66,9 @@ impl PageTableEntry {
     }
     /// Get the physical page number from the page table entry
     pub fn ppn(&self) -> PhysPageNum {
-        (self.bits >> 10 & ((1usize << 44) - 1)).into()
+        let res: PhysPageNum = (self.bits >> 10 & ((1usize << 44) - 1)).into();
+
+        res
     }
     pub fn set_ppn(&mut self, paddr: PhysAddr) {
         self.bits = (self.bits & !Self::PHYS_ADDR_MASK) | ((paddr.0 >> 2) & Self::PHYS_ADDR_MASK);

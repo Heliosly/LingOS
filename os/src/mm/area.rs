@@ -258,12 +258,16 @@ impl VmAreaTree {
         true
     }
 
-    /// 检查一个页号区间是否与已存在任何区域重叠
+    /// 检查一个页号区间是否与已存在任何区域重叠 左闭右开
     pub fn is_overlap(&self, range: &Range<VirtPageNum>) -> bool {
         for area in self.areas.values() {
             let a_s = area.vpn_range.get_start().0;
             let a_e = area.vpn_range.get_end().0;
             if range.start.0 < a_e && a_s < range.end.0 {
+                // println!(
+                //     "[VmAreaTree] is_overlap: range:{:?} area:{:?}",
+                //     range, area.vpn_range
+                // );
                 return true;
             }
         }
@@ -476,6 +480,7 @@ impl MapArea {
                 };
                 ppn = frame.ppn();
 
+                // println!("[MapArea] mapping vpn:{:#x} to frame ppn:{:#x}", vpn.0, ppn
                 self.data_frames.insert(vpn, frame);
             }
             MapType::Direct => {
@@ -488,6 +493,9 @@ impl MapArea {
     }
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {
+            // if vpn.0 == 0x167 {
+            //     println!("[MapArea] unmapping vpn:{:#x} ", vpn.0);
+            // }
             self.data_frames.remove(&vpn);
         }
         page_table.unmap(vpn);

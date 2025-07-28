@@ -434,9 +434,12 @@ pub async fn user_task_top() -> i32 {
 #[cfg(target_arch = "riscv64")]
 pub async fn user_task_top() -> i32 {
     loop {
+        use crate::timer::get_time_ms;
+
         debug!("into user_task_top");
         let curr = current_task();
-
+        current_process().set_slasttime(get_time_ms());
+        current_process().update_utime();
         let mut syscall_ret = None;
         let tf = curr.get_trap_cx().unwrap();
         // debug!("trap_status:{:?}",tf.trap_status);
@@ -466,7 +469,7 @@ pub async fn user_task_top() -> i32 {
 
                     let result = syscall(syscall_id, args).await;
 
-                    curr.update_stime();
+                    current_process().update_stime();
                     let result = match result {
                         Ok(res) => res,
                         Err(err) => {

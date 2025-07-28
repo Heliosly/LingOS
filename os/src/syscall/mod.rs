@@ -473,6 +473,7 @@ pub async fn syscall(syscall_id: usize, args: [usize; 6]) -> SyscallRet {
             )
             .await
         }
+        SYSCALL_ACCT => sys_acct(args[0] as *const u8).await,
         #[cfg(target_arch = "loongarch64")]
         SYSCALL_STATX => {
             sys_statx(

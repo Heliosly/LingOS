@@ -248,3 +248,105 @@ bitflags! {
         const MS_INVALIDATE = 4;
     }
 }
+
+// acct.h 中定义的标志
+pub const AFORK: u8 = 0o01; // 由 fork 产生但未 exec
+pub const ASU: u8 = 0o02; // 使用了超级用户权限
+pub const ACOMPAT: u8 = 0o04; // 使用兼容模式 (未使用)
+pub const ACORE: u8 = 0o10; // dump 了 core
+pub const AXSIG: u8 = 0o20; // 被信号终止
+
+const ACCT_COMM: usize = 16;
+
+/// comp_t is a 16-bit floating-point type with a 3-bit base-8 exponent
+/// and a 13-bit mantissa.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CompT(u16);
+
+impl CompT {
+    pub fn from_isize(val: isize) -> Self {
+        if val == 0 {
+            return CompT(0);
+        }
+        let mut val = val as u64;
+        let mut exp = 0;
+        while val > 8191 {
+            // 2^13 - 1
+            val >>= 3; // val /= 8
+            exp += 1;
+        }
+        // 如果指数过大，则截断
+        if exp > 7 {
+            // 2^3 - 1
+            exp = 7;
+            val = 8191;
+        }
+        CompT(((exp as u16) << 13) | (val as u16))
+    }
+}
+
+/// The structure written to the accounting file.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct Acct {
+    pub ac_flag: u8,              // 会计标志 (ASU, AFORK, etc.)
+    pub ac_version: u8,           // 总为 3
+    pub ac_tty: u16,              // 控制终端 (未实现，设为 0)
+    pub ac_exitcode: u32,         // 进程退出码
+    pub ac_uid: u32,              // 用户 ID
+    pub ac_gid: u32,              // 组 ID
+    pub ac_pid: u32,              // 进程 ID
+    pub ac_ppid: u32,             // 父进程 ID
+    pub ac_btime: u32,            // 进程创建时间 (自 epoch 以来的秒数)
+    pub ac_etime: f32,            // 进程经过时间
+    pub ac_utime: CompT,          // 用户模式下花费的 CPU 时间
+    pub ac_stime: CompT,          // 内核模式下花费的 CPU 时间
+    pub ac_cutime: CompT,         // 子进程在用户模式下花费的 CPU 时间
+    pub ac_cstime: CompT,         // 子进程在内核模式下花费的 CPU 时间
+    pub ac_mem: CompT,            // 平均内存使用量 (KB)
+    pub ac_io: CompT,             // I/O 操作次数
+    pub ac_rw: CompT,             // 读写次数 (块 I/O)
+    pub ac_minflt: CompT,         // 次缺页次数
+    pub ac_majflt: CompT,         // 主缺页次数
+    pub ac_comm: [u8; ACCT_COMM], // 命令名
+}
+
+impl Acct {
+    pub fn new() -> Self {
+        // 初始化 ac_comm 为全 0
+        let ac_comm = [0u8; ACCT_COMM];
+        Self {
+            ac_flag: 0,
+            ac_version: 3,
+            ac_tty: 0, // TTY 未实现
+            ac_exitcode: 0,
+            ac_uid: 0,
+            ac_gid: 0,
+            ac_pid: 0,
+            ac_ppid: 0,
+            ac_btime: 0,
+            ac_etime: 0.0,
+            ac_utime: CompT::default(),
+            ac_stime: CompT::default(),
+            ac_cutime: CompT::default(),
+            ac_cstime: CompT::default(),
+            ac_mem: CompT::default(),
+            ac_io: CompT::default(),
+            ac_rw: CompT::default(),
+            ac_minflt: CompT::default(),
+            ac_majflt: CompT::default(),
+            ac_comm,
+        }
+    }
+
+    /// 将结构体转换为字节数组以便写入文件
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(
+                self as *const Self as *const u8,
+                core::mem::size_of::<Self>(),
+            )
+        }
+    }
+}

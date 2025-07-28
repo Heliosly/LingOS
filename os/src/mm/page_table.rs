@@ -201,6 +201,14 @@ impl PageTable {
             }
             pte_list = Self::get_pte_list(pte.address());
         }
+        // if vpn.0 == 0x167 {
+        //     println!(
+        //         "[PageTable] find_pte_create: vpn:{:#x} pte:{:#x},root_pte:{:#x}",
+        //         vpn.0,
+        //         pte_list[vpn.pn_index(0)].bits,
+        //         self.root_ppn.0,
+        //     );
+        // }
         // level 1, map page
         Some(&mut pte_list[vpn.pn_index(0)])
     }
@@ -223,12 +231,21 @@ impl PageTable {
         }
         // level 2
         {
-            let pte = &mut pte_list[vpn.pn_index(1)];
+            let pte: &mut PageTableEntry = &mut pte_list[vpn.pn_index(1)];
             if !pte.is_valid() {
                 return None;
             }
             pte_list = Self::get_pte_list(pte.address());
         }
+        // if vpn.0 == 0x167 {
+        //     crate::utils::bpoint();
+        //     println!(
+        //         "[PageTable] find_pte: vpn:{:#x} pte:{:#x},root_pte:{:#x}",
+        //         vpn.0,
+        //         pte_list[vpn.pn_index(0)].bits,
+        //         self.root_ppn.0,
+        //     );
+        // }
         // level 1, map page
         Some(&mut pte_list[vpn.pn_index(0)])
     }
@@ -239,19 +256,24 @@ impl PageTable {
 
         let pte = self.find_pte_create(vpn).unwrap();
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
-        *pte = PageTableEntry::new(ppn, flags);
+        pte.set_flags(flags | PTEFlags::V);
+        pte.set_ppn(ppn.into());
         flush_tlb(vpn.0 << PAGE_SIZE_BITS);
     }
     #[cfg(target_arch = "riscv64")]
     /// set the map between virtual page number and physical page number
     #[allow(unused)]
     pub fn map(&mut self, vpn: VirtPageNum, ppn: PhysPageNum, flags: PTEFlags) {
-        // if vpn.0==0x2fe7d46{
-        //     println!("map vpn:{:x},ppn:{:x},flags:{:?}",vpn.0,ppn.0,flags);
-        // }
+        assert!(ppn.0 != 0);
         let pte = self.find_pte_create(vpn).unwrap();
         assert!(!pte.is_valid(), "vpn {:?} is mapped before mapping", vpn);
-        *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
+        pte.set_flags(flags | PTEFlags::V);
+        pte.set_ppn(ppn.into());
+        // if vpn.0 == 0x167 {
+        //     println!("[PageTable]map: vpn:{:#x} pte:{:#x}", vpn.0, pte.bits);
+        //     crate::utils::bpoint();
+        // }
+        // *pte = PageTableEntry::new(ppn, flags | PTEFlags::V);
     }
 
     /// remove the map between virtual page number and physical page number

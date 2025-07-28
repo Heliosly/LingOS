@@ -31,6 +31,7 @@ pub mod sleeplist;
 mod task;
 pub(crate) mod waker;
 use alloc::boxed::Box;
+pub use processor::ACCT_FILE;
 pub use processor::KERNEL_SCHEDULER;
 // mod timelist;
 use alloc::string::{String, ToString};
@@ -62,8 +63,9 @@ pub use task::RobustList;
 use crate::fs::{open_file, OpenFlags};
 use crate::mm::{get_target_ref, put_data};
 use crate::sync::futex::GLOBAL_FUTEX_SYSTEM;
-use crate::syscall::flags::{FUTEX_OWNER_DIED, FUTEX_TID_MASK, FUTEX_WAITERS};
+use crate::syscall::flags::{Acct, CompT, FUTEX_OWNER_DIED, FUTEX_TID_MASK, FUTEX_WAITERS};
 use crate::task::task::TaskControlBlock;
+use crate::timer::TimeData;
 use crate::utils::error::GeneralRet;
 use alloc::sync::Arc;
 
@@ -89,7 +91,66 @@ pub fn task_count() -> usize {
 /// pid of usertests app in make run TEST=1
 pub const IDLE_PID: usize = 0;
 // 在 TaskControlBlock 中
+async fn write_acct_record(exit_code: i32) {
+    let acct_file_guard = ACCT_FILE.lock();
 
+    // 检查会计功能是否已开启
+    if let Some(file) = acct_file_guard.as_ref() {
+        let proc = current_process();
+        let task = proc.main_task.lock().await;
+        let mut acct_record = Acct::new();
+
+        // 1. 填充已有信息
+        acct_record.ac_uid = task.uid() as u32;
+        acct_record.ac_gid = 0 as u32;
+        acct_record.ac_pid = proc.get_pid() as u32;
+        acct_record.ac_ppid = proc.parent() as u32;
+        acct_record.ac_exitcode = exit_code as u32;
+
+        // 命令名
+        let comm_temp = task.get_name().await;
+        let comm = comm_temp.as_bytes();
+        let len = comm.len().min(15);
+        acct_record.ac_comm[..len].copy_from_slice(&comm[..len]);
+
+        // 时间信息
+        let time_data: &TimeData = unsafe { &*proc.tms.get() };
+        let start_time_secs = time_data.starttime / 1_000; // 假设是纳秒
+        let etime_ms = time_data.stime + time_data.utime;
+
+        acct_record.ac_btime = start_time_secs as u32;
+        acct_record.ac_etime = etime_ms as f32 / 1_000.0;
+        acct_record.ac_utime = CompT::from_isize(time_data.utime);
+        acct_record.ac_stime = CompT::from_isize(time_data.stime);
+        acct_record.ac_cutime = CompT::from_isize(time_data.cutime);
+        acct_record.ac_cstime = CompT::from_isize(time_data.cstime);
+
+        // ac_flags
+        if task.uid() == 0 {
+            acct_record.ac_flag |= crate::syscall::flags::ASU;
+        }
+        if proc.fork_but_no_exec() {
+            // 假设您有这样一个标志
+            acct_record.ac_flag |= crate::syscall::flags::AFORK;
+        }
+
+        // 2. 填充尚未实现的信息
+        // let memory_stats = get_memory_stats(task.get_pid());
+        // let io_stats = get_io_stats(task.get_pid());
+
+        // acct_record.ac_mem = CompT::from_isize(memory_stats.average_rss_kb);
+        // acct_record.ac_minflt = CompT::from_isize(memory_stats.minor_faults);
+        // acct_record.ac_majflt = CompT::from_isize(memory_stats.major_faults);
+        // acct_record.ac_io = CompT::from_isize(io_stats.char_io);
+        // acct_record.ac_rw = CompT::from_isize(io_stats.block_io);
+
+        // 3. 写入文件
+        file.file()
+            .unwrap()
+            .write_at(0, acct_record.as_bytes())
+            .unwrap();
+    }
+}
 /// 终止一个进程及其所有线程，并回收资源。
 /// 这是 exit_group(2) 系统调用的内核实现。
 pub async fn exit_proc(exit_code: i32) {
@@ -151,6 +212,7 @@ pub async fn exit_proc(exit_code: i32) {
         }
         tasks_guard.clear();
     }
+    write_acct_record(exit_code).await;
 }
 /// 终止当前线程。如果这是进程中的最后一个线程，则等同于 exit_group。
 /// 这是 exit(2) 系统调用的内核实现。

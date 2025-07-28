@@ -224,8 +224,9 @@ pub async fn sys_getrandom(buf_ptr: *mut u8, len: usize, _flags: u32) -> Syscall
 /// * `tms` - *mut Tms
 pub async  fn sys_time(tms:*mut Tms) -> SyscallRet{
     trace!("[syscall_time] tms:{:#?}",tms);
-    let timedata= unsafe { *current_task().tms.get() };
     let pcb =current_process();
+
+    let timedata= unsafe { &*pcb.tms.get() };
     pcb.manual_alloc_type_for_lazy(tms).await?;
     let token =  pcb .get_user_token().await;
     *translated_refmut(token, tms)?= Tms ::new(&timedata);

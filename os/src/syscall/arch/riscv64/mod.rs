@@ -173,3 +173,5 @@ pub const SYSCALL_SETITIMER: usize = 103;
 pub const SYSCALL_UMASK: usize = 166;
 
 pub const SYSCALL_MSYNC: usize = 227;
+
+pub const SYSCALL_ACCT: usize = 89;

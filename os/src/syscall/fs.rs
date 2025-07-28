@@ -1442,7 +1442,9 @@ pub async fn sys_faccessat(
     if path_user_ptr.is_null() {
         // path_user_ptr == 0 或 < 0 都是无效地址
         return Err(SysErrNo::EFAULT);
-    }
+    };
+    // println!("{:#p}", path_user_ptr);
+    pcb_arc.manual_alloc_type_for_lazy(path_user_ptr).await?;
     // mode_u32 是 u32，不会 < 0。检查是否包含有效位。
     // FaccessatMode::from_bits 会处理无效位，如果它返回 None 或 Err。
     let mode = match FaccessatMode::from_bits(mode_u32) {
@@ -1491,16 +1493,22 @@ pub async fn sys_faccessat(
     // 5. 获取目标 inode 以检查其存在性和权限
     //    用 O_PATH 或类似的标志来表示只获取元数据而不真正打开。
     //    对于 faccessat，如果文件不存在，应该返回 ENOENT。
-    //    faccessat 的权限检查是基于 mode 参数，而不是打开时的权限。
+    //    faccessat 的权限检查是基于 mode 参数，而不是打开时的权限f
 
     let target_inode_arc = match find_inode(&abs_path, OpenFlags::O_PATH) {
         // 假设有异步 lookup_inode
         Ok(inode) => inode,
-        Err(SysErrNo::ENOENT) => return Err(SysErrNo::ENOENT), // 文件或路径组件不存在
-        Err(e) => return Err(e),                               // 其他查找错误
+        Err(SysErrNo::ENOENT) => {
+            warn!(
+                "[sys_faccessat] No such file or directory path:{}",
+                abs_path
+            );
+            return Err(SysErrNo::ENOENT);
+        } // 文件或路径组件不存在
+        Err(e) => return Err(e), // 其他查找错误
     };
 
-    // 如果 mode 是 F_OK (mode_u32 == 0)，并且我们成功 find_inode，说明文件存在。
+    // 如果 mode 是 F_OK (mode_u32 == 0)，并且我们成功 find_inode，说明文件存在f
     if mode_u32 == 0 {
         // F_OK check
         return Ok(0); // 文件存在，权限检查被跳过

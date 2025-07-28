@@ -49,6 +49,7 @@ unsafe impl Send for ProcessControlBlock {}
 ///
 /// Directly save the contents that will not change during running
 pub struct ProcessControlBlock {
+    pub tms: UnsafeCell<TimeData>,
     pub timers: [Mutex<KernelTimer>; 3],
     /// The  trapcontext
     // Immutable
@@ -89,7 +90,8 @@ pub struct ProcessControlBlock {
     pub fd_table: Arc<Mutex<FdManage>>,
     pub signal_shared_state: Arc<Mutex<ProcessSignalSharedState>>,
     pub state: Mutex<TaskStatus>,
-    pub wakers: Mutex<BTreeMap<usize, Waker>>, //todo(heliosly)
+    pub wakers: Mutex<BTreeMap<usize, Waker>>,
+    pub fork_but_no_exec: AtomicBool,
 }
 /// `ProcessControlBlock` 的实现。
 
@@ -172,7 +174,12 @@ impl ProcessControlBlock {
     pub fn parent(&self) -> usize {
         self.parent.load(Ordering::Acquire)
     }
-
+    pub fn fork_but_no_exec(&self) -> bool {
+        self.fork_but_no_exec.load(Ordering::Acquire)
+    }
+    pub fn set_fork_but_no_exec(&self, val: bool) {
+        self.fork_but_no_exec.store(val, Ordering::Release)
+    }
     /// 设置父进程的 ID。
     ///
     /// # Arguments
@@ -385,7 +392,6 @@ impl ProcessControlBlock {
     }
 }
 //  Non
-
 //         let a= *(self.task_status.lock().await) ;
 //         a== TaskStatus::Zombie
 
@@ -486,8 +492,10 @@ impl ProcessControlBlock {
             TaskSignalState::default(),
             None,
             false,
+            exe.rsplitn(2, '/').next().unwrap_or(&exe).to_string(),
         )));
         let process_control_block = Self {
+            tms: UnsafeCell::new(TimeData::default()),
             timers: [
                 Mutex::new(KernelTimer::default()),
                 Mutex::new(KernelTimer::default()),
@@ -518,6 +526,7 @@ impl ProcessControlBlock {
                 );
                 map
             }),
+            fork_but_no_exec: AtomicBool::new(false),
         };
 
         process_control_block.alloc_user_res().await;
@@ -812,6 +821,7 @@ impl ProcessControlBlock {
         let current_t = current_task();
         let old_trap = current_t.get_trap_cx().unwrap();
 
+        let name = current_t.get_name().await;
         let old_tls = old_trap.regs.tp;
         let trap_cx = Box::new(*old_trap);
         drop(current_t);
@@ -826,6 +836,7 @@ impl ProcessControlBlock {
             new_sig_state,
             child_tid,
             need_clear_tid,
+            name,
         )));
         if flags.contains(CloneFlags::CLONE_PARENT_SETTID) && ptid != 0 {
             self.manual_alloc_type_for_lazy(ptid as *const u32).await?;
@@ -833,7 +844,7 @@ impl ProcessControlBlock {
             *translated_refmut(parent_token, ptid as *mut u32)? = tcb.id.0 as u32;
         }
 
-        // trace!("flags:{:#?}",flags);
+        trace!("flags:{:#?}", flags);
         //生成线程或者进程
         let res = if flags.contains(CloneFlags::CLONE_THREAD) {
             self.tasks.lock().await.push(tcb.clone());
@@ -861,7 +872,8 @@ impl ProcessControlBlock {
             let process_control_block = Arc::new(ProcessControlBlock {
                 pid: pid.unwrap(),
                 main_task: Mutex::new(tcb.clone()),
-
+                fork_but_no_exec: AtomicBool::new(false),
+                tms: UnsafeCell::new(TimeData::default()),
                 cwd: Mutex::new(self.cwd.lock().await.clone()),
                 is_init: AtomicBool::new(false),
                 base_size: AtomicUsize::new(self.base_size()),
@@ -963,7 +975,10 @@ impl ProcessControlBlock {
         let old_end_vpn = VirtAddr::from(old_break - PAGE_SIZE).floor();
         let size = new_brk as isize - old_break as isize;
         let last_area: VirtAddr;
-        debug!("[brk] old={:#x}, new={:#x}", old_break, new_brk);
+        debug!(
+            "[brk] old={:#x}, new={:#x},size:;{:#x}",
+            old_break, new_brk, size
+        );
 
         let result: bool = if size < 0 {
             let end_brk;
@@ -1024,6 +1039,10 @@ impl ProcessControlBlock {
             self.set_program_brk(new_brk);
             Some(new_brk)
         } else {
+            warn!(
+                "[brk] failed to change program break from {:#x} to {:#x},result:{:#?}",
+                old_break, new_brk, result
+            );
             None
         }
     }
@@ -1153,6 +1172,18 @@ impl ProcessControlBlock {
         }
         wait_wakers.clear();
     }
+    pub fn update_utime(&self) {
+        { unsafe { *self.tms.get() } }.update_utime();
+    }
+    pub fn update_stime(&self) {
+        { unsafe { *self.tms.get() } }.update_stime();
+    }
+    pub fn set_ulasttime(&self, lasttime: usize) {
+        { unsafe { *self.tms.get() } }.set_ulasttime(lasttime as isize);
+    }
+    pub fn set_slasttime(&self, lasttime: usize) {
+        { unsafe { *self.tms.get() } }.set_slasttime(lasttime as isize);
+    }
 }
 
 /// A unique identifier for a thread.
@@ -1183,8 +1214,7 @@ unsafe impl Sync for TaskControlBlock {}
 pub struct TaskControlBlock {
     fut: UnsafeCell<Pin<Box<dyn Future<Output = i32> + 'static>>>,
     trap_cx: UnsafeCell<Option<Box<TrapContext>>>,
-
-    pub tms: UnsafeCell<TimeData>,
+    pub name: Mutex<String>,
     // executor: SpinNoIrq<Arc<Executor>>,
     pub wait_wakers: UnsafeCell<VecDeque<Waker>>,
     // pub scheduler: SpinNoIrq<Arc<SpinNoIrq<Scheduler>>>,
@@ -1236,12 +1266,14 @@ impl TaskControlBlock {
         signal_state: TaskSignalState,
         chlid_tid_ptr: Option<usize>,
         clear_child_tid: bool,
+        name: String,
     ) -> Self {
         let child_tid = match chlid_tid_ptr {
             Some(p) => Some(AtomicUsize::new(p)),
             None => None,
         };
         Self {
+            name: Mutex::new(name),
             id: TaskId::new(),
             is_init,
             exit_code: AtomicIsize::new(0),
@@ -1259,7 +1291,6 @@ impl TaskControlBlock {
             need_clear_child_tid: AtomicBool::new(clear_child_tid),
             robust_list: Mutex::new(RobustList::default()),
 
-            tms: UnsafeCell::new(TimeData::default()),
             uid: AtomicUsize::new(0),
             noma_policy: AtomicUsize::new(0),
             sleep_reason: spin::mutex::SpinMutex::new(WakeReason::None),
@@ -1311,8 +1342,8 @@ impl TaskControlBlock {
     pub fn set_uid(&self, uid: usize) {
         self.uid.store(uid, Ordering::Relaxed);
     }
-    pub fn uid(&self) {
-        self.uid.load(Ordering::Acquire);
+    pub fn uid(&self) -> usize {
+        self.uid.load(Ordering::Acquire)
     }
 
     pub fn is_exited(&self) -> bool {
@@ -1389,12 +1420,12 @@ impl TaskControlBlock {
     pub fn set_need_resched(&self, need: bool) {
         self.need_resched.store(need, Ordering::Release);
     }
-    pub fn update_utime(&self) {
-        { unsafe { *self.tms.get() } }.update_utime();
-    }
-    pub fn update_stime(&self) {
-        { unsafe { *self.tms.get() } }.update_stime();
-    }
+    // pub fn update_utime(&self) {
+    //     { unsafe { *self.tms.get() } }.update_utime();
+    // }
+    // pub fn update_stime(&self) {
+    //     { unsafe { *self.tms.get() } }.update_stime();
+    // }
     /// Sets the wake reason for the task.
     pub fn set_sleep_reason(&self, reason: WakeReason) {
         *self.sleep_reason.lock() = reason;
@@ -1407,6 +1438,12 @@ impl TaskControlBlock {
     }
     pub fn get_noma_policy(&self) -> usize {
         self.noma_policy.load(Ordering::Acquire)
+    }
+    pub async fn get_name(&self) -> String {
+        self.name.lock().clone()
+    }
+    pub async fn set_name(&self, name: String) {
+        self.name.lock().await.replace_range(.., &name);
     }
     pub fn join(&self, waker: Waker) {
         let task = waker.data() as *const Task;
